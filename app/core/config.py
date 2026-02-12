@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8091
     
-    API_V1_PREFIX: str = "/api/v1"
+    API_V1_PREFIX: str = "/v1"
     
     CORS_ORIGINS: List[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
