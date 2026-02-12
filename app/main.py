@@ -49,6 +49,13 @@ async def root():
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
+    from app.db.session import engine
+    from app.db.base import Base
+    from app.models import user
+    
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        
     print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} 启动成功!")
     print(f"📝 API 文档: http://{settings.HOST}:{settings.PORT}/docs")
     print(f"🔍 ReDoc 文档: http://{settings.HOST}:{settings.PORT}/redoc")
