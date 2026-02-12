@@ -16,9 +16,6 @@
 | FastAPI 应用 | 8091 | 主应用服务 |
 | Redis | 6379 | 缓存和会话存储 |
 | MySQL | 3306 | 关系型数据库 |
-| Kafka | 9092 (内部), 9093 (外部) | 消息队列 |
-| Zookeeper | 2181 | Kafka 依赖 |
-| Kafka UI | 8081 | Kafka 管理界面 |
 
 ## 快速开始
 
@@ -27,7 +24,7 @@
 如果你想在本地运行 FastAPI 应用,只需要启动基础服务:
 
 ```bash
-# 启动 Redis, MySQL, Kafka 等基础服务
+# 启动 Redis, MySQL 等基础服务
 docker-compose -f docker-compose.dev.yml up -d
 
 # 查看服务状态
@@ -67,7 +64,6 @@ docker-compose logs -f
 
 # 查看特定服务日志
 docker-compose logs -f app
-docker-compose logs -f kafka
 
 # 停止服务
 docker-compose down
@@ -82,10 +78,8 @@ docker-compose down -v
 
 - **API 文档**: http://localhost:8091/docs
 - **API ReDoc**: http://localhost:8091/redoc
-- **Kafka UI**: http://localhost:8081
 - **Redis**: localhost:6379
 - **MySQL**: localhost:3306
-- **Kafka**: localhost:9093 (外部访问)
 
 ## 数据库连接信息
 
@@ -119,11 +113,6 @@ Password: (无)
 redis://localhost:6379/0
 ```
 
-### Kafka
-
-```
-Bootstrap Servers: localhost:9093
-```
 
 ## 常用命令
 
@@ -135,7 +124,6 @@ docker-compose restart
 
 # 重启特定服务
 docker-compose restart app
-docker-compose restart kafka
 ```
 
 ### 查看服务状态
@@ -159,9 +147,6 @@ docker-compose exec mysql bash
 
 # 进入 Redis 容器
 docker-compose exec redis sh
-
-# 进入 Kafka 容器
-docker-compose exec kafka bash
 ```
 
 ### 数据库操作
@@ -196,9 +181,6 @@ docker system prune -a --volumes
 
 - `redis-data`: Redis 数据
 - `mysql-data`: MySQL 数据
-- `kafka-data`: Kafka 数据
-- `zookeeper-data`: Zookeeper 数据
-- `zookeeper-logs`: Zookeeper 日志
 
 查看数据卷:
 
@@ -254,11 +236,6 @@ ports:
 2. 检查健康状态是否为 `healthy`
 3. 查看服务日志: `docker-compose logs [service_name]`
 
-### Kafka 连接问题
-
-确保使用正确的地址:
-- 容器内访问: `kafka:9092`
-- 宿主机访问: `localhost:9093`
 
 ## 生产环境部署建议
 
@@ -266,7 +243,7 @@ ports:
 2. **配置资源限制**: 在 docker-compose.yml 中添加 CPU 和内存限制
 3. **启用日志轮转**: 配置 Docker 日志驱动
 4. **使用外部卷**: 将数据卷映射到宿主机目录
-5. **配置备份策略**: 定期备份数据库和 Kafka 数据
+5. **配置备份策略**: 定期备份数据库数据
 6. **监控和告警**: 集成 Prometheus、Grafana 等监控工具
 
 ## 参考资料
@@ -274,4 +251,3 @@ ports:
 - [Docker 官方文档](https://docs.docker.com/)
 - [Docker Compose 文档](https://docs.docker.com/compose/)
 - [FastAPI 文档](https://fastapi.tiangolo.com/)
-- [Kafka 文档](https://kafka.apache.org/documentation/)

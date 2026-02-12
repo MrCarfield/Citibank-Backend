@@ -46,16 +46,6 @@ vim .env
 | `MYSQL_PASSWORD` | `citibank123` | MySQL 密码 |
 | `MYSQL_DATABASE` | `citibank_db` | MySQL 数据库名 |
 
-### Kafka 配置
-
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092` | Kafka 服务器地址 |
-| `KAFKA_BROKER_ID` | `1` | Kafka Broker ID |
-| `KAFKA_GROUP_ID` | `citibank-backend` | Kafka 消费者组 ID |
-| `ZOOKEEPER_CLIENT_PORT` | `2181` | Zookeeper 端口 |
-| `ZOOKEEPER_TICK_TIME` | `2000` | Zookeeper Tick 时间 |
-
 ### 其他配置
 
 | 变量名 | 默认值 | 说明 |
@@ -119,7 +109,6 @@ docker-compose config
 
 # 查看特定服务的环境变量
 docker-compose exec mysql env | grep MYSQL
-docker-compose exec postgres env | grep POSTGRES
 ```
 
 ## 故障排查
