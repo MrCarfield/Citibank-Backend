@@ -52,8 +52,7 @@ async def startup_event():
     import asyncio
     from app.db.session import engine
     from app.db.base import Base
-    from app.models import user
-    from app.models import market  # noqa: F401 确保市场数据表被创建
+    from app.models import client  # noqa: F401 确保client表被创建
     
     # 数据库连接重试（Docker 启动时 MySQL 可能还未就绪）
     max_retries = 5
@@ -69,7 +68,7 @@ async def startup_event():
                 raise
             print(f"⏳ 数据库连接失败 (第 {attempt}/{max_retries} 次)，{3}秒后重试...")
             await asyncio.sleep(3)
-        
+    
     print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} 启动成功!")
     print(f"📝 API 文档: http://{settings.HOST}:{settings.PORT}/docs")
     print(f"🔍 ReDoc 文档: http://{settings.HOST}:{settings.PORT}/redoc")
