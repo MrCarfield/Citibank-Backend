@@ -359,8 +359,7 @@ async def _call_qwen(market: str, price_context: str, news_context: str) -> str:
       "ts": "状态转换的大致时间（ISO格式日期）",
       "reason": "转换原因简述"
     }
-  ],
-  "summary": "一段话总结当前市场状态机制及其原因（中文）"
+  ]
 }
 
 【重要】recentSwitches 必须返回数据！要求如下：
@@ -372,8 +371,7 @@ async def _call_qwen(market: str, price_context: str, news_context: str) -> str:
 6. 如果近期价格持续下跌，可能经历了 SUPPLY_DRIVEN 或 EVENT_DRIVEN → DEMAND_DRIVEN 的转换
 7. 至少返回最近1次状态转换（即使是推断的），格式如下：
    {"from": "SUPPLY_DRIVEN", "to": "DEMAND_DRIVEN", "ts": "2026-01-15", "reason": "价格持续下跌，需求疲软成为主要驱动因素"}
-8. 最多返回最近3次状态转换
-9. 如果你确定近期没有任何状态转换，才返回空数组 []"""
+8. 最多返回最近3次状态转换"""
 
     user_prompt = f"""请分析以下原油市场数据，判断当前市场处于哪种状态机制：
 
