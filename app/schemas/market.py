@@ -135,7 +135,6 @@ class RegimeStateResponse(BaseModel):
     stability: StabilityLevel = Field(..., description="稳定性等级")
     confidence: float = Field(..., ge=0, le=1, description="置信度 (0-1)")
     recentSwitches: List[RegimeSwitch] = Field(default_factory=list, description="近期状态转换记录")
-    summary: Optional[str] = Field(None, description="状态机制分析摘要")
 
     class Config:
         json_schema_extra = {
@@ -152,8 +151,7 @@ class RegimeStateResponse(BaseModel):
                         "ts": "2026-02-10T00:00:00Z",
                         "reason": "OPEC+ 减产决议导致供应端影响力上升"
                     }
-                ],
-                "summary": "当前市场主要由供应端因素驱动，OPEC+ 减产政策对价格形成支撑。"
+                ]
             }
         }
 
