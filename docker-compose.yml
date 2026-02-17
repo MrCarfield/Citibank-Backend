@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # FastAPI 应用
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: citibank-backend-app
+    ports:
+      - "${PORT:-8091}:${PORT:-8091}"
+    environment:
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8091}
+      - DEBUG=${DEBUG:-True}
+      # Redis 配置
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=6379
+      - REDIS_DB=${REDIS_DB:-0}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      # MySQL 配置
+      - MYSQL_HOST=${MYSQL_HOST:-mysql}
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${MYSQL_USER:-citibank}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-citibank123}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-citibank_db}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    networks:
+      - citibank-network
+    volumes:
+      - ./app:/app/app
+    restart: unless-stopped
+
+  # Redis 服务
+  redis:
+    image: redis:7-alpine
+    container_name: citibank-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis-data:/data
+    networks:
+      - citibank-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # MySQL 服务
+  mysql:
+    image: mysql:8.0
+    container_name: citibank-mysql
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-citibank_db}
+      MYSQL_USER: ${MYSQL_USER:-citibank}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-citibank123}
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - citibank-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+networks:
+  citibank-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  mysql-data:
