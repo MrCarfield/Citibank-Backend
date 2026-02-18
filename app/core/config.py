@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     MYSQL_USER: str = "citibank"
     MYSQL_PASSWORD: str = "citibank123"
     MYSQL_HOST: str = "localhost"
-    MYSQL_PORT: int = 3306
+    MYSQL_PORT: int = 3307
     MYSQL_DATABASE: str = "citibank_db"
     
     @property
@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     DEBUG: bool = True
+    
+    # 豆包大模型配置 (火山引擎)
+    DOUBAO_API_URL: str = "https://ark.cn-beijing.volces.com/api/v3/responses"
+    DOUBAO_API_KEY: str = "9169354a-7e2c-4578-b387-936a97ca1ff9"
+    DOUBAO_MODEL: str = "doubao-seed-1-8-251228"
     
     class Config:
         env_file = ".env"

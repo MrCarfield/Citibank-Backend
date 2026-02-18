@@ -2,7 +2,7 @@ import uuid
 import hashlib
 import json
 from datetime import timedelta
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +32,7 @@ Q = int(ZKP_CRYPTO_CONFIG.group.q, 16)
 G = int(ZKP_CRYPTO_CONFIG.group.g)
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     if expires_delta:
         expire = settings.ACCESS_TOKEN_EXPIRE_MINUTES  # Use config if not passed? No, use delta + now
