@@ -8,8 +8,7 @@ import json
 # 配置
 API_URL = "https://ark.cn-beijing.volces.com/api/v3/responses"
 API_KEY = "9169354a-7e2c-4578-b387-936a97ca1ff9"
-MODEL = "doubao-seed-1-8-251228"
-
+MODEL = "doubao-seed-1-8-251228"  
 
 async def test_doubao_api():
     """测试豆包API基本调用"""

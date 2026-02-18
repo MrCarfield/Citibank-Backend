@@ -52,6 +52,8 @@ async def startup_event():
     import asyncio
     from app.db.session import engine
     from app.db.base import Base
+    from app.models import user
+    from app.models import market  # noqa: F401 确保市场数据表被创建
     from app.models import client  # noqa: F401 确保client表被创建
     
     # 数据库连接重试（Docker 启动时 MySQL 可能还未就绪）
