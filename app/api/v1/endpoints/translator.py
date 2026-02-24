@@ -1,54 +1,12 @@
 import json
-import random
 from datetime import datetime
 from typing import Any
 from fastapi import APIRouter, HTTPException, Depends
 from app.schemas.translator import TranslatorRequest, TranslatorResponse
 from app.services.llm_council import get_council_response
+from app.services.oil_risk_inference import get_oil_neural_features
 
 router = APIRouter()
-
-def generate_mock_neural_net_data(request: TranslatorRequest) -> dict:
-    """
-    [未来集成点]
-    模拟预测神经网络的输出。
-    
-    TODO: 在生产系统中，此函数将被替换为调用实际的时间序列预测模型（例如 LSTM/Transformer）。
-    
-    预期接口：
-    输入：市场数据序列，宏观指标
-    输出：{
-        "predicted_price_change_pct": float,
-        "predicted_volatility_change_pct": float,
-        "confidence_score": float,
-        "primary_driver": str,
-        ...
-    }
-    """
-    # 基于 clientId 的确定性随机性，以保持同一客户的结果一致
-    seed_str = f"{request.clientId}-{request.market}-{request.horizon}"
-    random.seed(seed_str)
-    
-    # 模拟预测价格变动 (-15% 到 +15%)
-    pred_price_change = random.uniform(-0.15, 0.15)
-    
-    # 模拟波动率变化 (0% 到 +50%)
-    pred_volatility_change = random.uniform(0.0, 0.50)
-    
-    # 如果提供了场景，则覆盖
-    if request.scenario:
-        if request.scenario.priceShockPct is not None:
-            pred_price_change = request.scenario.priceShockPct
-        if request.scenario.volatilityShockPct is not None:
-            pred_volatility_change = request.scenario.volatilityShockPct
-
-    return {
-        "predicted_price_change_pct": pred_price_change,
-        "predicted_volatility_change_pct": pred_volatility_change,
-        "confidence_score": random.uniform(0.7, 0.95),
-        "primary_driver": random.choice(["Geopolitical Tension", "OPEC+ Supply Cut", "Global Recession Fears", "Inventory Build"]),
-        "secondary_driver": random.choice(["USD Strength", "China Demand Recovery", "Technical Support Break"])
-    }
 
 def construct_llm_prompt(request: TranslatorRequest, neural_data: dict) -> str:
     """
@@ -137,29 +95,12 @@ async def run_translator(request: TranslatorRequest):
     运行石油冲击转换器以生成特定于客户的影响、谈话要点和行动清单。
     """
     try:
-        # ---------------------------------------------------------
-        # [TODO: 替换为真实模型推理]
-        # 当前使用模拟数据生成器。
-        # 未来：neural_data = await prediction_service.predict(request)
-        # ---------------------------------------------------------
-        neural_data = generate_mock_neural_net_data(request)
-        
-        # 2. 构建 LLM 提示词
+        neural_data = await get_oil_neural_features(request)
         prompt = construct_llm_prompt(request, neural_data)
-        
-        # 3. 调用 LLM Council
-        # 我们假设 Council 返回有效的 JSON 字符串作为最终响应
         llm_response_text = await get_council_response(prompt)
-        
-        # 4. 清理并解析响应
-        # 有时 LLM 会添加 markdown 代码块，即使被要求不要这样做
         clean_json = llm_response_text.replace("```json", "").replace("```", "").strip()
-        
         data = json.loads(clean_json)
-        
-        # 5. 返回验证后的响应
         return TranslatorResponse(**data)
-        
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="AI 生成了无效的 JSON。请重试。")
     except Exception as e:

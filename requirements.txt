@@ -27,4 +27,13 @@ apscheduler>=3.10.0
 
 # MCP Client (Bing Search)
 mcp>=1.9.0
+<<<<<<< HEAD
+=======
+numpy
+pandas
+requests
+scikit-learn
+torch
+joblib
+>>>>>>> 83767a8 (chore_initial_import)
 

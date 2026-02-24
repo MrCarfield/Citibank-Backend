@@ -1,0 +1,22 @@
+{
+  "events": [
+    {
+      "date": "2022-02-24",
+      "name": "Russia-Ukraine conflict escalation",
+      "intensity": 3,
+      "type": "geopolitics"
+    },
+    {
+      "date": "2023-10-07",
+      "name": "Middle East conflict escalation",
+      "intensity": 3,
+      "type": "geopolitics"
+    },
+    {
+      "date": "2024-06-02",
+      "name": "OPEC+ meeting",
+      "intensity": 2,
+      "type": "opec"
+    }
+  ]
+}

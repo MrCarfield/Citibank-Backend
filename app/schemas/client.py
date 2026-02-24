@@ -69,3 +69,4 @@ class ClientListQuery(BaseModel):
     q: Optional[str] = Field(default=None, description="按名称搜索")
     type: Optional[ClientType] = Field(default=None, description="按类型筛选")
     limit: Optional[int] = Field(default=100, description="返回数量限制")
+
