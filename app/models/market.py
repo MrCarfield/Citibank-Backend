@@ -130,3 +130,33 @@ class MarketEventAnalysis(Base):
 
     def __repr__(self):
         return f"<MarketEventAnalysis(market={self.market}, date={self.analysis_date}, window={self.window_days})>"
+
+
+class ForecastCache(Base):
+    """Forecast预测结果缓存表 - 存储多AI模型生成的完整预测数据"""
+    __tablename__ = "forecast_cache"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键ID")
+    market = Column(SQLEnum(MarketType), nullable=False, index=True, comment="市场类型")
+    cache_date = Column(Date, nullable=False, index=True, comment="缓存日期")
+    cache_name = Column(String(100), nullable=False, comment="缓存名称(如: 2026-03-06算法预测)")
+    algorithm_data = Column(JSON, nullable=False, comment="算法模型原始输出数据")
+    # 各API端点的完整响应数据
+    distribution_data = Column(JSON, nullable=False, comment="distribution端点数据")
+    signal_data = Column(JSON, nullable=False, comment="signal端点数据")
+    confidence_data = Column(JSON, nullable=False, comment="confidence端点数据")
+    backtest_data = Column(JSON, nullable=False, comment="backtest端点数据")
+    overview_data = Column(JSON, nullable=False, comment="overview端点数据")
+    risk_analysis_data = Column(JSON, nullable=False, comment="risk-analysis端点数据")
+    transmission_path_data = Column(JSON, nullable=False, comment="transmission-path端点数据")
+    drivers_data = Column(JSON, nullable=False, comment="drivers端点数据")
+    stress_test_data = Column(JSON, nullable=False, comment="stress-test端点数据")
+    created_at = Column(TIMESTAMP, server_default=func.now(), comment="生成时间")
+
+    # 复合唯一索引：同一市场同一天只保留一份缓存
+    __table_args__ = (
+        Index('idx_forecast_cache_market_date', 'market', 'cache_date', unique=True),
+    )
+
+    def __repr__(self):
+        return f"<ForecastCache(market={self.market}, date={self.cache_date}, name={self.cache_name})>"

@@ -10,8 +10,9 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
+# 安装系统依赖（使用代理）
+RUN apt-get update -o Acquire::http::Proxy="http://host.docker.internal:7892" && \
+    apt-get install -y -o Acquire::http::Proxy="http://host.docker.internal:7892" \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
@@ -19,9 +20,9 @@ RUN apt-get update && apt-get install -y \
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装 Python 依赖
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+# 安装 Python 依赖（使用代理）
+RUN pip install --upgrade pip --proxy http://host.docker.internal:7892 && \
+    pip install -r requirements.txt --proxy http://host.docker.internal:7892
 
 # 复制项目文件
 COPY ./app /app/app

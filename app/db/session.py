@@ -14,6 +14,9 @@ AsyncSessionLocal = sessionmaker(
     expire_on_commit=False
 )
 
+# 导出异步会话类供直接使用
+async_session = AsyncSessionLocal
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session

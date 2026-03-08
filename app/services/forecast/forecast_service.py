@@ -1,18 +1,14 @@
 """
-Forecast 服务实现 - 集成豆包大模型
+Forecast 服务实现 - 从缓存读取多AI生成的数据
 
 数据来源:
-1. backend.md 中的算法输出格式 (Mock数据)
-2. 花旗杯.md 中的API规范
-3. 前端页面展示需求
-4. 豆包大模型生成 (LLM字段)
+1. 数据库中的 ForecastCache 表（由定时任务生成）
+2. 如果缓存不存在，降级使用 Mock 数据
 
-LLM生成的字段:
-- RiskSignal: drivers[].note, triggers[].if/then
-- ModelConfidence: reasons[], failureScenarios[]
-- BacktestSummary: notes
-- ForecastOverview: summary
-- DrivingFactors: factors[].description
+缓存生成流程:
+- 每天0点定时任务读取 backend.md 算法数据
+- 使用多AI模型(LLM Council)生成所有API数据
+- 保存到数据库，命名格式: YYYY-MM-DD算法预测
 """
 from datetime import datetime, date, timedelta
 from typing import Optional, List
@@ -48,7 +44,7 @@ from app.schemas.forecast import (
     DrivingFactorsResponse,
     StressTestResponse,
 )
-from app.services.llm.doubao_client import doubao_client
+from app.services.forecast.forecast_cache_service import forecast_cache_service
 
 
 # ==================== 配置 ====================
@@ -152,9 +148,26 @@ async def get_forecast_distribution(
     horizon: HorizonType,
     as_of: Optional[datetime] = None
 ) -> ForecastDistributionResponse:
-    """获取概率预测分布"""
+    """获取概率预测分布 - 从缓存读取"""
     now = as_of or datetime.utcnow()
     
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.distribution_data:
+        data = cache.distribution_data
+        return ForecastDistributionResponse(
+            horizon=HorizonType(data.get('horizon', horizon.value)),
+            asOf=now,
+            market=MarketType(data.get('market', market.value)),
+            median=data.get('median', 74.7),
+            p10=data.get('p10', 73.2),
+            p90=data.get('p90', 76.0),
+            probabilities=Probabilities(**data.get('probabilities', {"up": 0.35, "flat": 0.40, "down": 0.25})),
+            modelId=data.get('modelId', 'oil-forecast-ensemble-v3'),
+            modelVersion=data.get('modelVersion', '3.2.1')
+        )
+    
+    # 缓存不存在时使用默认值
     horizon_multiplier = {"1w": 1.0, "1m": 1.5, "1q": 2.0}
     mult = horizon_multiplier.get(horizon.value, 1.0)
     base_price = 74.7 if market == MarketType.WTI else 78.95
@@ -177,47 +190,48 @@ async def get_risk_signal(
     horizon: HorizonType,
     as_of: Optional[datetime] = None
 ) -> RiskSignalResponse:
-    """获取风险信号 [LLM: drivers[].note]"""
+    """获取风险信号 - 从缓存读取"""
     now = as_of or datetime.utcnow()
-    market_str = market.value
     
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.signal_data:
+        data = cache.signal_data
+        drivers_raw = data.get('drivers', [])
+        drivers = [
+            RiskDriver(
+                type=RiskDriverType(d.get('type', 'OTHER')),
+                weight=d.get('weight', 0.5),
+                note=d.get('note', '风险因素需关注')
+            )
+            for d in drivers_raw
+        ]
+        triggers_raw = data.get('triggers', [])
+        triggers = [
+            RiskTrigger(
+                if_condition=t.get('if', ''),
+                then_action=t.get('then', ''),
+                severity=TriggerSeverity(t.get('severity', 'INFO'))
+            )
+            for t in triggers_raw
+        ]
+        return RiskSignalResponse(
+            market=market,
+            asOf=now,
+            horizon=horizon,
+            level=RiskLevel(data.get('level', 'MEDIUM')),
+            drivers=drivers,
+            triggers=triggers
+        )
+    
+    # 缓存不存在时使用Mock数据
     drivers_data = [
         (RiskDriverType.VOLATILITY, 0.85),
         (RiskDriverType.EVENT, 0.70),
         (RiskDriverType.MACRO_COINCIDENCE, 0.55),
         (RiskDriverType.TERM_STRUCTURE, 0.40),
     ]
-    
-    # 并行生成driver notes
-    if ENABLE_LLM:
-        type_names = {
-            RiskDriverType.VOLATILITY: "波动率风险",
-            RiskDriverType.EVENT: "事件风险",
-            RiskDriverType.MACRO_COINCIDENCE: "宏观经济风险",
-            RiskDriverType.TERM_STRUCTURE: "期限结构风险",
-        }
-        tasks = [
-            doubao_client.generate_risk_analysis(
-                risk_type=type_names.get(dt, str(dt)),
-                market_context=f"{market_str}原油市场当前处于高波动期"
-            )
-            for dt, _ in drivers_data
-        ]
-        try:
-            notes_results = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True),
-                timeout=3.0
-            )
-            drivers = []
-            for i, (driver_type, weight) in enumerate(drivers_data):
-                note = notes_results[i]
-                if isinstance(note, Exception) or note is None:
-                    note = MOCK_DRIVER_NOTES.get(driver_type, "风险因素需关注")
-                drivers.append(RiskDriver(type=driver_type, weight=weight, note=note))
-        except asyncio.TimeoutError:
-            drivers = [RiskDriver(type=dt, weight=w, note=MOCK_DRIVER_NOTES.get(dt, "风险因素需关注")) for dt, w in drivers_data]
-    else:
-        drivers = [RiskDriver(type=dt, weight=w, note=MOCK_DRIVER_NOTES.get(dt, "风险因素需关注")) for dt, w in drivers_data]
+    drivers = [RiskDriver(type=dt, weight=w, note=MOCK_DRIVER_NOTES.get(dt, "风险因素需关注")) for dt, w in drivers_data]
     
     triggers = [
         RiskTrigger(if_condition="OPEC+成员国出现产量执行分歧", then_action="可能导致减产协议松动，供给预期上修", severity=TriggerSeverity.WARN),
@@ -237,41 +251,26 @@ async def get_model_confidence(
     horizon: HorizonType,
     as_of: Optional[datetime] = None
 ) -> ModelConfidenceResponse:
-    """获取模型置信度 [LLM: reasons[], failureScenarios[]]"""
+    """获取模型置信度 - 从缓存读取"""
     now = as_of or datetime.utcnow()
-    market_str = market.value
-    confidence = ConfidenceLevel.MEDIUM
     
-    # 并行生成reasons和failureScenarios
-    if ENABLE_LLM:
-        tasks = [
-            doubao_client.generate_confidence_reasons(
-                confidence_level=confidence.value,
-                market_regime="supply-driven",
-                model_performance="近30日方向准确率68%"
-            ),
-            doubao_client.generate_failure_scenarios(
-                market=market_str,
-                current_drivers=["OPEC+政策", "地缘政治", "库存变化", "美元走势"]
-            )
-        ]
-        try:
-            results = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True),
-                timeout=3.0
-            )
-            reasons = results[0] if not isinstance(results[0], Exception) and results[0] else MOCK_REASONS
-            failure_scenarios = results[1] if not isinstance(results[1], Exception) and results[1] else MOCK_FAILURE_SCENARIOS
-        except asyncio.TimeoutError:
-            reasons = MOCK_REASONS
-            failure_scenarios = MOCK_FAILURE_SCENARIOS
-    else:
-        reasons = MOCK_REASONS
-        failure_scenarios = MOCK_FAILURE_SCENARIOS
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.confidence_data:
+        data = cache.confidence_data
+        return ModelConfidenceResponse(
+            market=market,
+            asOf=now,
+            horizon=horizon,
+            confidence=ConfidenceLevel(data.get('confidence', 'MEDIUM')),
+            reasons=data.get('reasons', MOCK_REASONS),
+            failureScenarios=data.get('failureScenarios', MOCK_FAILURE_SCENARIOS)
+        )
     
+    # 缓存不存在时使用Mock数据
     return ModelConfidenceResponse(
         market=market, asOf=now, horizon=horizon,
-        confidence=confidence, reasons=reasons, failureScenarios=failure_scenarios
+        confidence=ConfidenceLevel.MEDIUM, reasons=MOCK_REASONS, failureScenarios=MOCK_FAILURE_SCENARIOS
     )
 
 
@@ -283,32 +282,35 @@ async def get_backtest_summary(
     out_of_sample: bool = True,
     as_of: Optional[datetime] = None
 ) -> BacktestSummaryResponse:
-    """获取回测摘要 [LLM: notes]"""
+    """获取回测摘要 - 从缓存读取"""
     now = as_of or datetime.utcnow()
     
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.backtest_data:
+        data = cache.backtest_data
+        metrics_raw = data.get('modelMetrics', [])
+        baseline_raw = data.get('baselineMetrics', [])
+        return BacktestSummaryResponse(
+            market=market,
+            horizon=horizon,
+            asOf=now,
+            evaluationWindow=EvaluationWindow(
+                start=start,
+                end=end,
+                isOutOfSample=out_of_sample
+            ),
+            modelMetrics=[BacktestMetric(**m) for m in metrics_raw],
+            baselineMetrics=[BacktestMetric(**m) for m in baseline_raw],
+            bestRegimes=data.get('bestRegimes', ["SUPPLY_DRIVEN", "DEMAND_DRIVEN"]),
+            notes=data.get('notes', MOCK_BACKTEST_NOTES)
+        )
+    
+    # 缓存不存在时使用Mock数据
     model_mae = 1.23
     baseline_mae = 2.15
     direction_accuracy = 0.68
     best_regimes = ["SUPPLY_DRIVEN", "DEMAND_DRIVEN"]
-    
-    # 并行生成notes
-    if ENABLE_LLM:
-        try:
-            notes = await asyncio.wait_for(
-                doubao_client.generate_backtest_notes(
-                    model_mae=model_mae,
-                    baseline_mae=baseline_mae,
-                    direction_accuracy=direction_accuracy,
-                    best_regimes=best_regimes
-                ),
-                timeout=3.0
-            )
-            if notes is None:
-                notes = MOCK_BACKTEST_NOTES
-        except asyncio.TimeoutError:
-            notes = MOCK_BACKTEST_NOTES
-    else:
-        notes = MOCK_BACKTEST_NOTES
     
     return BacktestSummaryResponse(
         market=market,
@@ -334,7 +336,7 @@ async def get_backtest_summary(
             BacktestMetric(name="Sharpe (signal-based)", value=0.73, unit=None),
         ],
         bestRegimes=best_regimes,
-        notes=notes
+        notes=MOCK_BACKTEST_NOTES
     )
 
 
@@ -342,38 +344,33 @@ async def get_forecast_overview(
     market: MarketType,
     as_of: Optional[datetime] = None
 ) -> ForecastOverviewResponse:
-    """获取预测总览 [LLM: summary] - 匹配backend.md算法输出格式"""
+    """获取预测总览 - 从缓存读取"""
     
-    # 构建预测曲线数据
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.overview_data:
+        data = cache.overview_data
+        forecast_curve = [ForecastCurvePoint(**point) for point in data.get('forecast_curve', MOCK_FORECAST_CURVE)]
+        factor_importance = FactorImportance(**data.get('factor_importance', MOCK_FACTOR_IMPORTANCE))
+        risk_probs = RiskProbs(**data.get('risk_probs', MOCK_RISK_PROBS))
+        return ForecastOverviewResponse(
+            date=data.get('date', MOCK_DATE),
+            current_price=data.get('current_price', MOCK_CURRENT_PRICE),
+            forecast_price=data.get('forecast_price', MOCK_FORECAST_PRICE),
+            direction=data.get('direction', MOCK_DIRECTION),
+            direction_prob=data.get('direction_prob', MOCK_DIRECTION_PROB),
+            risk_level=data.get('risk_level', MOCK_RISK_LEVEL),
+            risk_probs=risk_probs,
+            factor_importance=factor_importance,
+            forecast_horizon=data.get('forecast_horizon', MOCK_FORECAST_HORIZON),
+            forecast_curve=forecast_curve,
+            summary=data.get('summary', MOCK_FORECAST_SUMMARY)
+        )
+    
+    # 缓存不存在时使用Mock数据
     forecast_curve = [ForecastCurvePoint(**point) for point in MOCK_FORECAST_CURVE]
-    
-    # 构建因子贡献度
     factor_importance = FactorImportance(**MOCK_FACTOR_IMPORTANCE)
-    
-    # 构建风险概率分布
     risk_probs = RiskProbs(**MOCK_RISK_PROBS)
-    
-    # 使用LLM生成summary（基于算法输出数据）
-    if ENABLE_LLM:
-        try:
-            summary = await asyncio.wait_for(
-                doubao_client.chat(
-                    prompt=f"""基于以下算法预测数据，生成一段简洁的预测总结（50字以内）：
-- 当前价格: {MOCK_CURRENT_PRICE}
-- 预测价格: {MOCK_FORECAST_PRICE}
-- 方向: {MOCK_DIRECTION}
-- 风险等级: {MOCK_RISK_LEVEL}
-- 主要因子贡献: 技术{MOCK_FACTOR_IMPORTANCE['technical']:.2f}, 供需{MOCK_FACTOR_IMPORTANCE['supply']:.2f}""",
-                    system_prompt="你是一位专业的原油市场分析师，擅长用简洁的语言总结预测结果。"
-                ),
-                timeout=3.0
-            )
-            if summary is None:
-                summary = MOCK_FORECAST_SUMMARY
-        except asyncio.TimeoutError:
-            summary = MOCK_FORECAST_SUMMARY
-    else:
-        summary = MOCK_FORECAST_SUMMARY
     
     return ForecastOverviewResponse(
         date=MOCK_DATE,
@@ -386,7 +383,7 @@ async def get_forecast_overview(
         factor_importance=factor_importance,
         forecast_horizon=MOCK_FORECAST_HORIZON,
         forecast_curve=forecast_curve,
-        summary=summary
+        summary=MOCK_FORECAST_SUMMARY
     )
 
 
@@ -394,9 +391,29 @@ async def get_risk_analysis(
     market: MarketType,
     as_of: Optional[datetime] = None
 ) -> RiskSignalAnalysisResponse:
-    """获取风险信号分析"""
+    """获取风险信号分析 - 从缓存读取"""
     now = as_of or datetime.utcnow()
     
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.risk_analysis_data:
+        data = cache.risk_analysis_data
+        signals_raw = data.get('signals', [])
+        signals = [
+            RiskSignalItem(
+                name=s.get('name', ''),
+                description=s.get('description', ''),
+                level=RiskLevel(s.get('level', 'MEDIUM'))
+            )
+            for s in signals_raw
+        ]
+        return RiskSignalAnalysisResponse(
+            market=market,
+            asOf=now,
+            signals=signals
+        )
+    
+    # 缓存不存在时使用Mock数据
     return RiskSignalAnalysisResponse(
         market=market,
         asOf=now,
@@ -413,10 +430,25 @@ async def get_transmission_path(
     market: MarketType,
     as_of: Optional[datetime] = None
 ) -> TransmissionPathResponse:
-    """获取风险传导路径 [LLM: nodes[].description]"""
+    """获取风险传导路径 - 从缓存读取"""
     now = as_of or datetime.utcnow()
     
-    # 简短描述（15字以内）
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.transmission_path_data:
+        data = cache.transmission_path_data
+        nodes_raw = data.get('nodes', [])
+        nodes = [
+            TransmissionPathNode(label=n.get('label', ''), description=n.get('description', ''))
+            for n in nodes_raw
+        ]
+        return TransmissionPathResponse(
+            market=market,
+            asOf=now,
+            nodes=nodes
+        )
+    
+    # 缓存不存在时使用Mock数据
     nodes_data = [
         ("地缘冲突", "中东局势紧张"),
         ("原油供应收紧", "OPEC+减产执行"),
@@ -425,36 +457,7 @@ async def get_transmission_path(
         ("航空企业利润承压", "航司利润下滑"),
         ("银行信用风险上升", "信贷风险暴露"),
     ]
-    
-    # 并行生成所有描述
-    if ENABLE_LLM:
-        tasks = []
-        for label, default_desc in nodes_data:
-            task = doubao_client.chat(
-                prompt=f"解释'{label}'在风险传导中的作用，不超过12字",
-                system_prompt="你是金融风险分析师，回答简洁专业。",
-                timeout=10.0  # 缩短超时时间
-            )
-            tasks.append(task)
-        
-        # 并行执行，最多等待3秒
-        try:
-            descriptions = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True),
-                timeout=3.0
-            )
-            # 处理结果，失败的使用默认值
-            nodes = []
-            for i, (label, default_desc) in enumerate(nodes_data):
-                desc = descriptions[i]
-                if isinstance(desc, Exception) or desc is None:
-                    desc = default_desc
-                nodes.append(TransmissionPathNode(label=label, description=desc))
-        except asyncio.TimeoutError:
-            # 超时使用默认值
-            nodes = [TransmissionPathNode(label=label, description=desc) for label, desc in nodes_data]
-    else:
-        nodes = [TransmissionPathNode(label=label, description=desc) for label, desc in nodes_data]
+    nodes = [TransmissionPathNode(label=label, description=desc) for label, desc in nodes_data]
     
     return TransmissionPathResponse(
         market=market,
@@ -467,9 +470,29 @@ async def get_driving_factors(
     market: MarketType,
     as_of: Optional[datetime] = None
 ) -> DrivingFactorsResponse:
-    """获取驱动因子 [LLM: factors[].description]"""
+    """获取驱动因子 - 从缓存读取"""
     now = as_of or datetime.utcnow()
     
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.drivers_data:
+        data = cache.drivers_data
+        factors_raw = data.get('factors', [])
+        factors = [
+            DrivingFactor(
+                factor=f.get('factor', ''),
+                impactRate=f.get('impactRate', 50),
+                description=f.get('description', '')
+            )
+            for f in factors_raw
+        ]
+        return DrivingFactorsResponse(
+            market=market,
+            asOf=now,
+            factors=factors
+        )
+    
+    # 缓存不存在时使用Mock数据
     factors_data = [
         ("供给侧与需求侧", 85),
         ("库存与实物平衡", 70),
@@ -478,34 +501,7 @@ async def get_driving_factors(
         ("市场结构与期货", 20),
         ("波动率与情绪", 75),
     ]
-    
-    # 并行生成所有因子描述
-    if ENABLE_LLM:
-        tasks = [
-            doubao_client.generate_driver_description(
-                factor_name=factor_name,
-                impact_rate=impact_rate,
-                market_context="当前原油市场处于supply-driven状态"
-            )
-            for factor_name, impact_rate in factors_data
-        ]
-        try:
-            descriptions = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True),
-                timeout=3.0
-            )
-            factors = []
-            for i, (factor_name, impact_rate) in enumerate(factors_data):
-                desc = descriptions[i]
-                if isinstance(desc, Exception) or desc is None:
-                    desc = MOCK_FACTOR_DESCRIPTIONS.get(factor_name, f"{factor_name}对油价有影响。")
-                factors.append(DrivingFactor(
-                    factor=factor_name, impactRate=impact_rate, description=desc
-                ))
-        except asyncio.TimeoutError:
-            factors = [DrivingFactor(factor=fn, impactRate=ir, description=MOCK_FACTOR_DESCRIPTIONS.get(fn, f"{fn}对油价有影响。")) for fn, ir in factors_data]
-    else:
-        factors = [DrivingFactor(factor=fn, impactRate=ir, description=MOCK_FACTOR_DESCRIPTIONS.get(fn, f"{fn}对油价有影响。")) for fn, ir in factors_data]
+    factors = [DrivingFactor(factor=fn, impactRate=ir, description=MOCK_FACTOR_DESCRIPTIONS.get(fn, f"{fn}对油价有影响。")) for fn, ir in factors_data]
     
     return DrivingFactorsResponse(
         market=market, asOf=now, factors=factors
@@ -516,9 +512,29 @@ async def get_stress_test(
     market: MarketType,
     as_of: Optional[datetime] = None
 ) -> StressTestResponse:
-    """获取情景压力测试"""
+    """获取情景压力测试 - 从缓存读取"""
     now = as_of or datetime.utcnow()
     
+    # 尝试从缓存读取
+    cache = await forecast_cache_service.get_latest_cache(market)
+    if cache and cache.stress_test_data:
+        data = cache.stress_test_data
+        scenarios_raw = data.get('scenarios', [])
+        scenarios = [
+            StressTestScenario(
+                scenario=s.get('scenario', ''),
+                oilPriceChange=s.get('oilPriceChange', ''),
+                industryImpact=s.get('industryImpact', {})
+            )
+            for s in scenarios_raw
+        ]
+        return StressTestResponse(
+            market=market,
+            asOf=now,
+            scenarios=scenarios
+        )
+    
+    # 缓存不存在时使用Mock数据
     return StressTestResponse(
         market=market,
         asOf=now,

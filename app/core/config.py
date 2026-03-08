@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     DOUBAO_API_KEY: str = "9169354a-7e2c-4578-b387-936a97ca1ff9"
     DOUBAO_MODEL: str = "doubao-seed-1-8-251228"
     
+    # 其他可选配置（兼容.env中的额外字段）
+    MYSQL_ROOT_PASSWORD: Optional[str] = None
+    TZ: str = "Asia/Shanghai"
+    OPENROUTER_API_KEY: Optional[str] = None
+    EASYIMPR_API_KEY: Optional[str] = None
+    BING_YING_SEARCH: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
